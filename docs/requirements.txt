@@ -1,5 +1,5 @@
 easydict 
-cv2
+opencv-python
 scikit-learn 
 scipy 
 matplotlib
