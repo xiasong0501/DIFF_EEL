@@ -23,7 +23,7 @@ C.diff_amy_lowres_root_path='datasets/Diff_amy_lowres'
 
 #################################################
 ###########
-C.rpl_weight_path = os.path.join(C.root_dir, 'ckpts', 'exp', 'Diff_EEL_p=0.25/iter_9500.pth')  #6500 7500 8500 9500
+C.rpl_weight_path = os.path.join(C.root_dir, 'ckpts', 'exp', 'checkpoint_best.pth')  #6500 7500 8500 9500
 # C.rpl_weight_path = os.path.join(C.root_dir, 'ckpts', 'exp', 'rpl.code+corocl/iter_3200.pth') 
 # C.rpl_weight_path = os.path.join(C.root_dir, 'ckpts', '27_withbg0.5_withmse/iter_3000.pth') 
 C.measure_way = "energy"
