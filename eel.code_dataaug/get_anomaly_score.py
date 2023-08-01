@@ -137,10 +137,10 @@ if __name__ == '__main__':
                         type=int,
                         help="distributed or not")
                         
-    parser.add_argument('--input_folder', default='input',
+    parser.add_argument('--input_folder', default='./input',
                         type=str,
                         help="inputs_folder")
-    parser.add_argument('--output_folder', default='output',
+    parser.add_argument('--output_folder', default='./output',
                         type=str,
                         help="outputs_folder")
 
