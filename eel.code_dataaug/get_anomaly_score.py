@@ -30,45 +30,19 @@ def compute_anomaly_score(score, mode='energy'):
         prob_diff=top2_prob[0,:,:]-top2_prob[1,:,:]
         prob_max=top2_prob[0,:,:]
         entorpy_score = -torch.sum(prob * torch.log(prob), dim=0)
-        normalized_entropy=entorpy_score
-        normalized_entropy=normalized_entropy-normalized_entropy.mean()
-        energy=torch.log(torch.sum(torch.exp(score),dim=0))
-        reg_energy=torch.sum(torch.exp(score+2*prob),dim=0)
-        normalize_energy1=(energy-energy.min())/(energy.max()-energy.min())*5
-        normalize_energy=energy-energy.mean()
-        sort_normalized_entropy=normalized_entropy.flatten().sort().values
-        thre_indx=int(len(sort_normalized_entropy)/10)
-        threshold_entropy=sort_normalized_entropy[thre_indx]
-        normalized_entropy=torch.nn.functional.relu(normalized_entropy-threshold_entropy)+0.01
-        plus_entropy=1/normalized_entropy
-        # anomaly_score=entorpy_score
+
         anomaly_score = -(1. * torch.logsumexp(score, dim=0))*1+entorpy_score*1
-        #anomaly_score = -normalize_energy1*1+normalized_entropy*0.2
-       # anomaly_score=-torch.max(prob,dim=0)[0] #max_softmax
-        # anomaly_score = -torch.log(reg_energy)
-        # anomaly_score=-(1. * torch.log((plus_entropy)*torch.sum(torch.exp(score),dim=0)))
-        
-        
-        # one = torch.ones_like(anomaly_score)*anomaly_score.min()
-        # anomaly_score= torch.where(normalized_entropy < 0.0001, one, anomaly_score)
-        # anomaly_score=-(1. * torch.log((prob_diff+0.01)*torch.sum(torch.exp(score),dim=0)))
-        # anomaly_score=-(1. * torch.log((1/(entorpy_score+0.01))*torch.sum(torch.exp(score),dim=0)))
+ 
 
     elif mode == 'entropy':
         prob = torch.softmax(score, dim=0)
         anomaly_score=-torch.max(prob,dim=0)[0]
-        #anomaly_score=-(torch.max(prob,dim=0)[0]*(1. * torch.logsumexp(score, dim=0)))
-        #anomaly_score = -torch.sum(prob * torch.log(prob), dim=0) / torch.log(torch.tensor(19.))
+
     else:
         raise NotImplementedError
 
-    # regular gaussian smoothing
     anomaly_score=anomaly_score.detach().cpu().numpy()
-    # kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(5,5))
-    # kernel_1 = np.ones((4, 4), dtype=np.uint8)
-    # anomaly_score = cv2.erode(anomaly_score, kernel, 1)
-    # anomaly_score = cv2.dilate(anomaly_score, kernel, 1)
-    # anomaly_score = cv2.dilate(anomaly_score, kernel_1, 1)
+
     anomaly_score = torch.from_numpy(anomaly_score)
     anomaly_score = anomaly_score.unsqueeze(0)
     anomaly_score = torchvision.transforms.GaussianBlur(7, sigma=1)(anomaly_score)
@@ -102,17 +76,9 @@ def main(gpu, ngpus_per_node, config, args):
 
     transform = Compose([ToTensor(), Normalize(config.image_mean, config.image_std)])
 
-    #cityscapes_val = Cityscapes(root=config.city_root_path, split="val", transform=transform)
-    #cityscapes_test = Cityscapes(root=config.city_root_path, split="test", transform=transform)
-    #evaluator = SlidingEval(config, device=0 if engine.local_rank < 0 else engine.local_rank)
-    # fishyscapes_ls = Fishyscapes(split='LostAndFound', root=config.fishy_root_path, transform=transform)
-    # fishyscapes_static = Fishyscapes(split='Static', root=config.fishy_root_path, transform=transform)
-    # segment_me_anomaly = SegmentMeIfYouCan(split='road_anomaly', root=config.segment_me_root_path, transform=transform)
-    # segment_me_obstacle = SegmentMeIfYouCan(split='road_obstacle', root=config.segment_me_root_path,
-    #                                         transform=transform)
-    # road_anomaly = RoadAnomaly(root=config.road_anomaly_root_path, transform=transform)
+
     model = get_anomaly_detector(config.rpl_weight_path)
-    #vis_tool = Tensorboard(config=config)
+
 
     if engine.distributed:
         torch.cuda.set_device(engine.local_rank)
@@ -123,10 +89,9 @@ def main(gpu, ngpus_per_node, config, args):
     else:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model.to(device)
-    # dataset_path="datasets/SMIC/dataset_AnomalyTrack/images"
-    dataset_name='dataset_AnomalyTrack'
-    # dataset_name='dataset_ObstacleTrack'
-    dataset_path="datasets/SMIC/"+dataset_name+"/images"
+
+    dataset_path=args.input_folder
+    output_path=args.output_folder
     image_names=os.listdir(dataset_path)
     i=0
     with torch.no_grad():
@@ -137,26 +102,31 @@ def main(gpu, ngpus_per_node, config, args):
                 image=Image.open(dataset_path+'/'+image_name).convert('RGB')
                 image, mask = transform(image, image)
                 img = image.cuda(non_blocking=True)
-                _, logits = model.module(img) if engine.distributed else model(img)
+                seg_results, logits = model.module(img) if engine.distributed else model(img)
+                seg_results=seg_results.cpu()
+                seg_results=seg_results.squeeze()
+                
+                segmentation_result=torch.argmax(seg_results,dim=0)
+                print(seg_results.shape,segmentation_result.shape)
+                segmentation_result=np.array(segmentation_result.cpu())
                 #assert 1==0, logits.shape
                 logits=logits.to(torch.float32)
                 anomaly_score = compute_anomaly_score(logits, mode='energy').cpu()   
                 anomaly_score=anomaly_score.numpy()
-                if dataset_name=='dataset_ObstacleTrack':
-                    np_name='outputs_obs/'+image_name[0:-5]+'.npy'
-                    print(i)
-                if dataset_name=='dataset_AnomalyTrack':
-                    np_name='outputs_amy/'+image_name[0:-4]+'.npy'
-                    print(i)
-                np.save(np_name,anomaly_score)
+                
+                amy_np_name=output_path+'/'+image_name[0:-4]+'_anomaly.npy'
+                seg_np_name=output_path+'/'+image_name[0:-4]+'_segmentation.npy'
+                np.save(amy_np_name,anomaly_score)
+                np.save(seg_np_name,segmentation_result)
                 
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Anomaly Segmentation')
-    parser.add_argument('--gpus', default=4,
+    parser.add_argument('--gpus', default=1,
                         type=int,
                         help="gpus in use")
+                        
     parser.add_argument("--ddp", action="store_true",
                         help="distributed data parallel training or not;"
                              "MUST SPECIFIED")
@@ -166,6 +136,13 @@ if __name__ == '__main__':
     parser.add_argument('-n', '--nodes', default=1,
                         type=int,
                         help="distributed or not")
+                        
+    parser.add_argument('--input_folder', default='input',
+                        type=str,
+                        help="inputs_folder")
+    parser.add_argument('--output_folder', default='output',
+                        type=str,
+                        help="outputs_folder")
 
     args = parser.parse_args()
     args.world_size = args.nodes * args.gpus
