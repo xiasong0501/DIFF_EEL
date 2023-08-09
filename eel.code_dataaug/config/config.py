@@ -107,6 +107,6 @@ C.wandb_online = True
 """Save Config"""
 #C.saved_dir = os.path.join("ckpts/exp", C.experiment_name)
 
-if not os.path.exists(C.saved_dir):
-    os.mkdir(C.saved_dir)
+# if not os.path.exists(C.saved_dir):
+#     os.mkdir(C.saved_dir)
 
